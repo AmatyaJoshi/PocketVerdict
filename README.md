@@ -1,193 +1,175 @@
-# HackerRank Orchestrate
+# PocketVerdict
 
-Starter repository for the **HackerRank Orchestrate** 24-hour hackathon (September 2026).
+**Buy or wait?** PocketVerdict answers that question for a real person with real commitments.
+Give it an expense, and it rebuilds the user's cash flow, forecasts the next 90 days, and returns a
+verdict: pay in full, pay part now, use a seller's installment plan, wait for a date, or don't.
 
-## Buy or Wait?
+Every verdict is *safe by construction*: the projected balance never drops below the user's
+minimum on any day of the forecast, essentials stay covered, and the plan finishes by the deadline.
 
-Build an AI-powered financial agent that decides whether a user can safely afford a requested expense.
-
-A user may ask: **"Can I afford this laptop?"**
-
-Answering well takes more than the current balance. The agent must account for recurring expenses, pending payments, essential spending, confirmed income, available payment options, and relevant details buried in messages and images.
-
-For every request, the agent decides whether the user should pay in full, pay partially, use installments, wait, or not proceed. The recommendation must be personalized: two users with the same balance can deserve different answers based on their commitments, priorities, payment preferences, and willingness to adjust flexible expenses.
-
-A recommendation is safe only if the user can complete the full payment plan, cover essential expenses, and stay above their preferred minimum balance throughout the forecast period.
-
-Read [`problem_statement.md`](./problem_statement.md) for the full task spec, input/output schema, allowed values, conflict-resolution rules, and submission format.
+```
+┌───────────────────────────────┐        ┌──────────────────────────────────┐
+│  Decision engine (Python)     │        │  Workbench (Next.js 16)          │
+│  code/                        │  JSON  │  web/                            │
+│  • events → 90-day forecast   │◀──────▶│  • dashboard, request detail     │
+│  • plan ranking & changes     │        │  • ask flow, evaluation page     │
+│  • VLM / OCR + message parser │        │  • grounded advisor chatbot      │
+│  • verifier → output.csv      │        │  • Prisma · MySQL/SQLite · Auth  │
+└───────────────────────────────┘        └──────────────────────────────────┘
+```
 
 ---
 
-## Quick Start
+## What a verdict contains
 
-Clone the repository and move into the project directory:
-
-```bash
-git clone https://github.com/interviewstreet/hackerrank-orchestrate-september26.git
-cd hackerrank-orchestrate-september26
-```
-
-Build your solution in `code/main.py`, or use another language and document its entry point clearly.
-
-Your solution must:
-
-- Read the input files from `dataset/`
-- Generate one prediction for every request
-- Write the final predictions to `output.csv` in the repository root
-
-Run the starter Python entry point with:
-
-```bash
-python3 code/main.py
-```
-
-After running your solution, confirm that `output.csv` exists in the repository root and contains the required columns and one row for every request.
-
-## Important File Locations
-
-```text
-dataset/        Input data and the blank output template. Do not modify the input data.
-code/           Your solution code.
-output.csv      Final generated predictions in the repository root.
-code.zip        ZIP file containing your complete solution for submission.
-```
-
-The blank template at `dataset/output.csv` is provided as a reference. Your final generated file must be the root-level `output.csv`.
+| Field | Meaning |
+|---|---|
+| `amount_safe_to_pay` | The most the user can pay **today** without breaking the 90-day safety check |
+| `affordability_status` | `affordable_now` · `affordable_with_plan` · `affordable_later` · `not_affordable` |
+| `recommended_payment_method` | `full_payment` · `partial_payment` · `installments` · `wait` · `not_recommended` |
+| `payment_plan` | Every payment as `YYYY-MM-DD:amount`, chronological |
+| `earliest_date_for_full_payment` | First day the whole amount is safe as a single payment |
+| `spending_changes_needed` | Up to three `stop:<event>` / `reduce_to:<event>:<amount>` on flexible expenses |
+| `decision_explanation` | One or two plain sentences with the numbers behind the call |
 
 ---
 
-## Repository Layout
+## How the engine thinks
 
-```text
+1. **Reconstruct the financial state.** Load profiles, events, seller options, messages, images and
+   dated FX rates. Convert foreign-currency rows with the rate for their settlement date. Fill blank
+   amounts from the linked bill or payslip image (vision model if a key is present, otherwise a bundled
+   offline OCR model). Drop cancelled, non-cash and unrealised rows; recognise internal transfers.
+2. **Read the evidence.** Messages follow employer / bank / merchant templates in English and
+   Indonesian. A rule-based parser turns them into structured adjustments: salary raised, cut, moved or
+   ended; first salary confirmed; arrears; approved invoices; rent +12 %; pending refunds and prizes
+   that must *not* be counted. Anything unrecognised can be classified by an LLM, and every answer is
+   validated before it touches a number. Instructions embedded in messages or images are never executed.
+3. **Forecast 90 days.** Reserve pending, scheduled and failed debits; count confirmed salary on its
+   settlement date; project recurring series found in history by cadence (monthly, weekly, every N
+   days) and amount statistics; de-duplicate against known upcoming rows.
+4. **Run the safety check.** Simulate the daily balance. The safe amount is the trough above the
+   minimum; the earliest full-payment date is the first day whose suffix-minimum still clears the
+   minimum plus the request.
+5. **Rank the plans.** Full, wait, partial and each installment option are simulated. Eligibility
+   follows the user's accepted methods and installment limit. Spending changes are only proposed on
+   flexible, non-protected series the user is willing to adjust, and the least disruptive combination
+   that works is chosen. Ranking: meets the deadline → no changes → lowest total cost → earlier start →
+   fewer payments → lowest option id.
+6. **Verify and explain.** A contract checker enforces bounds, plan shapes, option matching and
+   flexible-only changes before `output.csv` is written; the explanation is generated from the numbers.
+
+---
+
+## Quick start
+
+### Decision engine (Python 3.10+)
+
+```bash
+pip install -r code/requirements.txt
+python code/main.py                                  # dataset/requests.csv -> output.csv
+python code/evaluation/main.py                       # score against the 25 solved samples
+python code/evaluation/main.py --validate output.csv # contract checks (rows, columns, rules)
+python code/evaluation/main.py --tune                # grid-search forecaster knobs
+python code/evaluation/main.py --usage-report        # regenerate code/evaluation/usage_report.md
+```
+
+Runs fully offline. To use models, set one of `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`
+(images go through a vision model, unusual messages through an LLM). `BUYORWAIT_LLM=off|auto|on`.
+
+### Workbench (Node 20+)
+
+```bash
+cd web
+cp .env.example .env               # set AUTH_SECRET; choose a database below
+npm install
+
+# Option A – MySQL (production target)
+docker compose up -d               # MySQL 8.4 on localhost:3307
+npx prisma db push && npm run db:seed
+
+# Option B – SQLite (zero setup)
+#   DATABASE_URL="file:./dev.db" in .env, then:
+npm run db:sqlite
+
+npm run dev                        # http://localhost:3000  (demo@buyorwait.app / demo1234)
+```
+
+The web app calls the engine as a child process (`python ../code/serve.py`), so Python and the
+engine requirements must be available to Node. Set `PYTHON_BIN` in `.env` if needed.
+
+---
+
+## Workbench features
+
+* **Requests** – Kite-style dashboard: verdict summary strip, paginated table with search and
+  filters by status, type and source.
+* **Request detail** – the verdict card, 90-day balance chart (minimum-balance floor, deadline and
+  payment markers), payment plan, spending changes, seller options, messages and bill images, engine
+  notes, and full decision history. Re-run the engine at any time.
+* **Ask** – three fields (who, how much, when) with live headroom feedback. Creates an ad-hoc request,
+  runs the engine and opens the verdict.
+* **Evaluation** – runs the 25 solved samples and shows agreement on status, method, earliest date and
+  safe amount, side by side with the expected answers.
+* **Advisor** – a chat panel that knows which request is open. It builds a fact sheet from the stored
+  decision and answers *why*, *how much today*, *when in full*, *which installment option* and *what
+  spending changes* deterministically, or through Claude (`@anthropic-ai/sdk`, model `claude-opus-5`)
+  when `ANTHROPIC_API_KEY` is set. Answers never invent numbers that are not in the fact sheet.
+* **Accessibility** – skip link, focus rings, labelled controls, table captions, live regions,
+  keyboard-closable dialog, colour never used alone, all motion respects `prefers-reduced-motion`.
+
+---
+
+## Repository layout
+
+```
 .
-├── AGENTS.md                         # Rules for AI coding tools + transcript logging
-├── problem_statement.md              # Full challenge statement
-├── README.md                         # You are here
-├── code/                             # Your solution code
-├── output.csv                        # Final generated predictions
-└── dataset/
-    ├── requests.csv                  # 250 requests to evaluate — predict these
-    ├── output.csv                    # Blank submission template
-    ├── sample_requests.csv           # 25 solved examples
-    ├── financial_profiles.csv        # Balances, minimum balance, priorities, preferences
-    ├── financial_events.csv          # Historical, pending, and confirmed transactions
-    ├── request_payment_options.csv   # Payment options available per request
-    ├── exchange_rates.csv            # Fixed, dated conversion rates
-    ├── messages.csv                  # Messages tied to users, requests, or events
-    ├── images.csv                    # Payroll letters, statements, bills, receipts
-    └── media/
-        └── images/
+├── code/                        Decision engine
+│   ├── main.py                  CLI: dataset -> output.csv
+│   ├── serve.py                 JSON bridge used by the web app
+│   ├── buyorwait/
+│   │   ├── data.py              CSV loading, dated FX conversion
+│   │   ├── evidence.py          image reader (VLM -> OCR), message template parser (-> LLM)
+│   │   ├── forecast.py          recurrence detection, salary projection, daily simulation
+│   │   ├── planner.py           candidate plans, spending changes, ranking, explanations
+│   │   ├── verify.py            output-contract checks
+│   │   └── llm.py               provider-agnostic model client with token accounting
+│   ├── evaluation/main.py       scoring, tuning, validation, usage report
+│   └── evaluation/usage_report.md
+├── web/                         PocketVerdict workbench (see web/README.md)
+│   ├── app/                     App Router pages and API routes
+│   ├── components/              UI, charts, chat, pagination, motion
+│   ├── lib/                     Prisma client, engine bridge, advisor, formatting
+│   └── prisma/                  schema + CSV seed
+├── dataset/                     Input data (profiles, events, requests, options, messages, images, rates)
+└── output.csv                   Verdicts for every request in dataset/requests.csv
 ```
 
-Only `dataset/requests.csv` requires predictions. Everything else is context. Join user records with `user_id`, request records with `request_id`, supporting evidence with `related_event_id`, and exchange rates with the rate date and currency pair.
+---
 
-Amounts are in the user's `home_currency` — the dataset uses INR, ZAR, IDR, USD, and EUR, and every conversion rate you need is in `exchange_rates.csv`. All dates are `YYYY-MM-DD`. Live exchange rates, market data, and banking access are not required.
+## Configuration and secrets
+
+All secrets come from environment variables or a local `.env` that is git-ignored. Nothing in this
+repository contains keys, and model answers are cached as amounts only (`code/cache/`).
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | engine, advisor | optional model providers |
+| `BUYORWAIT_LLM`, `BUYORWAIT_MODEL`, `ADVISOR_MODEL` | engine, advisor | mode and model overrides |
+| `DATABASE_URL` | web | MySQL or SQLite connection |
+| `AUTH_SECRET`, `AUTH_URL` | web | NextAuth |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | seed | demo login |
+| `ENGINE_ROOT`, `PYTHON_BIN` | web | where the engine lives and how to run it |
 
 ---
 
-## What You Need to Build
+## Design principles
 
-For every row in `dataset/requests.csv`, produce one row in `output.csv` with:
-
-| Column | Meaning |
-|---|---|
-| `request_id` | The request being answered |
-| `amount_safe_to_pay` | Largest amount safe to pay on `request_date` before optional spending changes, after protecting essentials and the minimum balance |
-| `affordability_status` | `affordable_now`, `affordable_with_plan`, `affordable_later`, or `not_affordable` |
-| `recommended_payment_method` | `full_payment`, `partial_payment`, `installments`, `wait`, or `not_recommended` |
-| `payment_plan` | Chronological `<YYYY-MM-DD>:<amount>` entries joined by `\|`, or `none` |
-| `earliest_date_for_full_payment` | Earliest date the full amount is forecast safe as one payment; empty if never within the forecast |
-| `spending_changes_needed` | Up to three `stop:<event_id>` / `reduce_to:<event_id>:<amount>` changes joined by `\|`, or `none` |
-| `decision_explanation` | Short explanation and the financial facts behind it |
-
-`0 <= amount_safe_to_pay <= requested_amount` must always hold. Installment plans must exactly match a supplied payment option, and only recurring expenses marked flexible may be changed.
-
-`affordable_with_plan` means the full request is completed through a partial-payment schedule, installments, or permitted spending changes. Recommend `partial_payment` only when the request allows it, the user accepts it, `0 < amount_safe_to_pay < requested_amount`, and `earliest_date_for_full_payment` is on or before `desired_completion_date`. Use exactly two payments: pay `amount_safe_to_pay` on `request_date`, then pay the remaining amount on `earliest_date_for_full_payment`. The two payments must add up to `requested_amount`. Unlike installments, partial payment does not need to match a supplied payment option.
-
----
-
-## Suggested Workflow
-
-1. Inspect `dataset/sample_requests.csv` — 25 requests with completed output columns — to understand the expected format and decision style.
-2. Reconstruct each user's financial state from `financial_profiles.csv` and `financial_events.csv`: separate recurring expenses from one-time events, reserve pending transactions, count confirmed salary only on its settlement date, and de-duplicate repeated representations of the same event.
-3. When an event has a blank `amount`, find its `event_id` as `related_event_id` in `images.csv` and extract the amount from the linked image. Never treat a blank amount as zero. Pull in any other relevant messages, images, and payment options for the request.
-4. Forecast forward and generate a plan that keeps the balance above the minimum at every step.
-5. Verify deterministically — bounds, plan feasibility, schedule match, flexible-only spending changes — before writing `output.csv`.
-6. Score yourself on the solved samples, then run the full dataset.
-
-You may use any language or runtime. Python, JavaScript, and TypeScript are all reasonable choices.
-
----
-
-## Requirements
-
-Your solution must:
-
-- be runnable from the terminal
-- read the provided files from `dataset/`
-- produce a valid `output.csv` with the exact required columns in the exact required order
-- include one prediction for every `request_id` in `dataset/requests.csv`
-- not use organizer-only files or hardcoded labels
-- keep behavior deterministic where possible
-
-If you use API keys or secrets, read them from environment variables. Never hardcode secrets in the repo.
-
----
-
-## Evaluation
-
-Your `output.csv` will be compared against hidden ground-truth values.
-
-The scoring will consider:
-
-- accuracy of `amount_safe_to_pay`
-- correctness of `affordability_status`
-- correctness of `recommended_payment_method` and `payment_plan`
-- accuracy of `earliest_date_for_full_payment`
-- validity of `spending_changes_needed`
-- usefulness and consistency of `decision_explanation`
-
-### Token Usage And Cost Analysis
-
-Your `code.zip` must include one token-usage file:
-
-```text
-evaluation/usage_report.md
-```
-
-The report must cover model providers and names, model calls, input and output tokens, total and average tokens per request, estimated total and per-request cost. The reported values must correspond to the final full-dataset run that produced your `output.csv`.
-
----
-
-## Chat Transcript Logging
-
-This repo includes an [`AGENTS.md`](./AGENTS.md) file for AI coding tools. It asks compatible tools to append conversation summaries to a `log.txt` in the repository root — the same directory as `AGENTS.md`:
-
-| Platform | Path |
-|---|---|
-| macOS / Linux | `<repo root>/log.txt` |
-| Windows | `<repo root>\log.txt` |
-
-The path resolves relative to `AGENTS.md`, so it stays correct across clones, renames, and checkouts. `log.txt` is gitignored — upload it as your chat transcript at submission time. Do not paste secrets into the chat.
-
-In case, the harness you are using is not in the repo root, you can explicitly ask the agent to look for the AGENTS.md in this folder & then continue.
-
----
-
-## Submission
-
-Submit the following files as instructed by HackerRank:
-
-| File | Description |
-|---|---|
-| `code.zip` | Full runnable solution, prompts/configuration, README, and the required `evaluation/` folder |
-| `output.csv` | Predictions for every row in `dataset/requests.csv` |
-| `chat_transcript` | The `log.txt` described above, showing how you developed or used the system |
-
-Before submitting, confirm:
-
-- `output.csv` has one row per row in `dataset/requests.csv` (250 rows plus the header).
-- `output.csv` has the exact required columns in the exact required order.
-- Every `amount_safe_to_pay` satisfies `0 <= amount_safe_to_pay <= requested_amount`.
-- Every installment plan matches a supplied payment option, and every spending change targets a flexible recurring expense.
-- Your runnable code, setup instructions, and `evaluation/` folder are included in `code.zip`.
+* **Deterministic core, models at the edges.** Financial logic never depends on a model; models only
+  read evidence, and their output is validated before use.
+* **Personalised by data, not by rules of thumb.** Two users with the same balance get different
+  verdicts because their commitments, protected categories, accepted methods and flexibility differ.
+* **Conservative on income.** Pending credits, bonuses, commissions, refunds, prizes and unrealised
+  gains are not cash until they settle.
+* **Explainable.** Every number on a verdict can be traced to a row in the dataset or a projected
+  series shown in the UI.

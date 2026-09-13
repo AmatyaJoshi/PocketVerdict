@@ -23,3 +23,6 @@ web/*.tsbuildinfo
 .env.local
 web/.env
 web/.env.local
+
+# challenge statement (kept local)
+problem_statement.md
