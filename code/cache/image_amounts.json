@@ -1,0 +1,98 @@
+{
+ "image_01": {
+  "amount": 4365000.0,
+  "currency": "IDR",
+  "source": "ocr:rapidocr",
+  "detail": "label=net pay"
+ },
+ "image_02": {
+  "amount": 100000.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=balance due"
+ },
+ "image_03": {
+  "amount": 41272.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=net amount"
+ },
+ "image_04": {
+  "amount": 2854.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=total"
+ },
+ "image_05": {
+  "amount": 704.05,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=amount due till"
+ },
+ "image_06": {
+  "amount": 890.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=total"
+ },
+ "image_07": {
+  "amount": 8528.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=grand total"
+ },
+ "image_08": {
+  "amount": 15339.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=total amount received"
+ },
+ "image_09": {
+  "amount": 723.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=total amount received"
+ },
+ "image_10": {
+  "amount": 79679.26,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=balance due"
+ },
+ "image_11": {
+  "amount": 3550.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=amount payable"
+ },
+ "image_12": {
+  "amount": 33.5,
+  "currency": "USD",
+  "source": "ocr:rapidocr",
+  "detail": "label=total"
+ },
+ "image_13": {
+  "amount": 2298.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=total paid"
+ },
+ "image_14": {
+  "amount": 443.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=total"
+ },
+ "image_15": {
+  "amount": 9968.0,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=grand total"
+ },
+ "image_16": {
+  "amount": 393.22,
+  "currency": "INR",
+  "source": "ocr:rapidocr",
+  "detail": "label=total"
+ }
+}

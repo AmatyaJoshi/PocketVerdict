@@ -1,0 +1,8 @@
+# core (standard library only for the engine)
+python-dotenv>=1.0
+# offline image reading fallback (ONNX runtime, no network)
+rapidocr_onnxruntime>=1.2
+# optional model providers - install the one you use
+anthropic>=0.40 ; python_version >= "3.10"
+openai>=1.40
+google-generativeai>=0.8

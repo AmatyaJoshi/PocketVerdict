@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// Application login (NextAuth credentials provider)
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String?
+  passwordHash String
+  role         String     @default("analyst")
+  createdAt    DateTime   @default(now())
+  decisions    Decision[]
+}
+
+/// financial_profiles.csv
+model Profile {
+  userId               String            @id
+  homeCurrency         String
+  balance              Float
+  minBalance           Float
+  priorities           String            @db.Text
+  protect              String            @db.Text
+  reduceOk             String            @db.Text
+  stopOk               String            @db.Text
+  methods              String            @db.Text
+  maxInstallmentMonths Int?
+  events               FinancialEvent[]
+  requests             FinanceRequest[]
+  messages             Message[]
+  images               ImageRef[]
+}
+
+/// financial_events.csv
+model FinancialEvent {
+  eventId        String    @id
+  userId         String
+  eventType      String
+  description    String
+  category       String
+  direction      String
+  amount         Float?
+  currency       String
+  eventDate      DateTime  @db.Date
+  settlementDate DateTime? @db.Date
+  status         String
+  linkedEventId  String?
+  flexibility    String
+  minAllowed     Float?
+  profile        Profile   @relation(fields: [userId], references: [userId])
+
+  @@index([userId, eventDate])
+  @@index([userId, category])
+}
+
+/// requests.csv + sample_requests.csv + ad-hoc requests created in the app
+model FinanceRequest {
+  requestId             String          @id
+  userId                String
+  requestDate           DateTime        @db.Date
+  requestType           String
+  requestedAmount       Float
+  desiredCompletionDate DateTime        @db.Date
+  allowsPartialPayment  Boolean
+  requestText           String          @db.Text
+  source                String          @default("evaluation") // evaluation | sample | adhoc
+  createdAt             DateTime        @default(now())
+  profile               Profile         @relation(fields: [userId], references: [userId])
+  options               PaymentOption[]
+  decisions             Decision[]
+  expected              ExpectedOutput?
+
+  @@index([userId])
+  @@index([source, requestDate])
+}
+
+/// request_payment_options.csv
+model PaymentOption {
+  optionId             String         @id
+  requestId            String
+  paymentMethod        String
+  paymentAmount        Float
+  numberOfPayments     Int
+  firstPaymentDate     DateTime       @db.Date
+  paymentFrequencyDays Int?
+  financingFee         Float
+  totalPayableAmount   Float
+  request              FinanceRequest @relation(fields: [requestId], references: [requestId])
+
+  @@index([requestId])
+}
+
+/// messages.csv
+model Message {
+  messageId      String   @id
+  userId         String
+  requestId      String?
+  relatedEventId String?
+  sentAt         DateTime
+  sourceType     String
+  text           String   @db.Text
+  profile        Profile  @relation(fields: [userId], references: [userId])
+
+  @@index([userId])
+}
+
+/// images.csv
+model ImageRef {
+  imageId        String  @id
+  userId         String
+  requestId      String?
+  relatedEventId String?
+  profile        Profile @relation(fields: [userId], references: [userId])
+
+  @@index([userId])
+}
+
+/// exchange_rates.csv
+model ExchangeRate {
+  id           Int      @id @default(autoincrement())
+  rateDate     DateTime @db.Date
+  fromCurrency String
+  toCurrency   String
+  rate         Float
+
+  @@unique([rateDate, fromCurrency, toCurrency])
+}
+
+/// Solved sample outputs (sample_requests.csv) - used only for the evaluation view
+model ExpectedOutput {
+  requestId                  String         @id
+  amountSafeToPay            Float
+  affordabilityStatus        String
+  recommendedPaymentMethod   String
+  paymentPlan                String         @db.Text
+  earliestDateForFullPayment String?
+  spendingChangesNeeded      String         @db.Text
+  decisionExplanation        String         @db.Text
+  request                    FinanceRequest @relation(fields: [requestId], references: [requestId])
+}
+
+/// Every engine run for a request (latest one is shown)
+model Decision {
+  id                         Int            @id @default(autoincrement())
+  requestId                  String
+  amountSafeToPay            Float
+  affordabilityStatus        String
+  recommendedPaymentMethod   String
+  paymentPlan                String         @db.Text
+  earliestDateForFullPayment String?
+  spendingChangesNeeded      String         @db.Text
+  decisionExplanation        String         @db.Text
+  engineJson                 String?        @db.LongText
+  engineVersion              String         @default("1.0.0")
+  llmProvider                String?
+  createdAt                  DateTime       @default(now())
+  createdById                String?
+  request                    FinanceRequest @relation(fields: [requestId], references: [requestId])
+  createdBy                  User?          @relation(fields: [createdById], references: [id])
+
+  @@index([requestId, createdAt])
+}

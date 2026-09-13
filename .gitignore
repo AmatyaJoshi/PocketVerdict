@@ -1,0 +1,25 @@
+# submission artefacts and transcript (uploaded separately)
+code.zip
+log.txt
+
+# python
+__pycache__/
+*.pyc
+code/cache/full_debug.json
+code/cache/sample_debug.json
+code/cache/llm_cache.json
+
+# web app
+web/node_modules/
+web/.next/
+web/dev.db*
+web/prisma/dev.db*
+web/prisma/schema.sqlite.prisma
+web/public/media/
+web/*.tsbuildinfo
+
+# secrets - never commit
+.env
+.env.local
+web/.env
+web/.env.local
